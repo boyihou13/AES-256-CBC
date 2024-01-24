@@ -1,0 +1,190 @@
+<!--
+    v1.0:更改金鑰處存為二進制，修復無法解密的問題。
+-->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AES-256-CBC</title>
+	<link rel="icon" href="https://files.boyihou.me/web_custom_element/icon/AES-256-CBC.ico" type="image/x-icon">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            width: 100%;
+            margin: 0;
+            font-family: Arial, sans-serif;
+            padding: 20px;
+        }
+
+        #container {
+            width: 100%;
+            max-width: 800px;
+            text-align: center;
+        }
+
+        #controlPanel {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            align-items: center;
+            margin: 10px;
+        }
+
+        #outputText {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            border: 1px solid #ccc;
+            padding: 10px;
+            background-color: #f5f5f5;
+        }
+
+        #keyFileLabel {
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        #identificationCode {
+            font-weight: bold;
+            margin-top: 20px;
+        }
+
+        textarea {
+            width: 100%;
+        }
+
+        @media only screen and (min-width: 768px) {
+            #container {
+                width: 75%;
+            }
+        }
+
+        @media only screen and (min-width: 1024px) {
+            #container {
+                width: 60%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">AES-256-CBC</h1>
+    <div id="container">
+        <p id="identificationCode">No identification code</p>
+        <p id="keyFileLabel">No key file loaded</p>
+        <textarea id="inputText" rows="4" placeholder="Type text here..."></textarea>
+        <div id="controlPanel">
+            <input type="password" id="password" placeholder="Enter password for IV" />
+            <input type="file" id="keyFile" style="display: none;" onchange="loadKeyFile(this)" />
+            <button onclick="document.getElementById('keyFile').click();">Load Key File</button>
+            <button onclick="generateKey()">Generate Key File</button>
+            <button onclick="encrypt()">Encrypt</button>
+            <button onclick="decrypt()">Decrypt</button>
+            <button onclick="downloadText('encrypted')">Download Output Text</button>
+            
+        </div>
+        <p id="outputText"></p>
+    </div>
+
+    <script>
+        var key;
+        var iv;
+        var lastOperation;
+
+        function loadKeyFile(input) {
+        var file = input.files[0];
+        var reader = new FileReader();
+        reader.onload = function(e) {
+        var arrayBuffer = e.target.result;
+        var byteArray = new Uint8Array(arrayBuffer);
+        key = CryptoJS.lib.WordArray.create(byteArray);
+        document.getElementById('keyFileLabel').textContent = "Loaded key file: " + file.name;
+        updateIdentificationCode();
+        };
+    reader.readAsArrayBuffer(file);
+}
+
+        function generateKey() {
+        if (!confirm("Are you sure you want to generate a new key? This will download a new key file.")) {
+        return;
+        }
+        var array = new Uint8Array(32);
+        window.crypto.getRandomValues(array);
+        var blob = new Blob([array], { type: 'application/octet-stream' });
+        var url = window.URL.createObjectURL(blob);
+        var element = document.createElement('a');
+        element.setAttribute('href', url);
+        element.setAttribute('download', 'Key.aeskey');
+        element.style.display = 'none';
+        document.body.appendChild(element);
+        element.click();
+        document.body.removeChild(element);
+        window.URL.revokeObjectURL(url);
+        document.getElementById('keyFileLabel').textContent = "Generated new key file: Key.aeskey. Please load this file.";
+        }
+
+        function getIV() {
+            var password = document.getElementById('password').value;
+            var hash = CryptoJS.SHA256(password);
+            var ivString = hash.toString(CryptoJS.enc.Hex).substring(0, 4) + hash.toString(CryptoJS.enc.Hex).substring(60, 64);
+            iv = CryptoJS.enc.Hex.parse(ivString);
+            updateIdentificationCode();
+        }
+
+        function updateIdentificationCode() {
+            if (!key || !iv) {
+                document.getElementById('identificationCode').textContent = "No identification code";
+                return;
+            }
+            var combined = key.toString(CryptoJS.enc.Hex) + iv.toString(CryptoJS.enc.Hex);
+            var hash = CryptoJS.SHA256(combined);
+            var hash = CryptoJS.SHA256(hash);
+            var identificationCode = hash.toString(CryptoJS.enc.Hex).substring(hash.toString().length - 2);
+            document.getElementById('identificationCode').textContent = "Identification Code: " + identificationCode;
+        }
+
+        function encrypt() {
+            if (!key) {
+                alert('Please load a key file first.');
+                return;
+            }
+            getIV();
+            var text = CryptoJS.enc.Utf8.parse(document.getElementById('inputText').value);
+            var encrypted = CryptoJS.AES.encrypt(text, key, { iv: iv });
+            document.getElementById('outputText').textContent = encrypted.ciphertext.toString(CryptoJS.enc.Hex);
+            lastOperation = 'encrypted';  // Update the last operation
+        }
+
+        function decrypt() {
+            if (!key) {
+                alert('Please load a key file first.');
+                return;
+            }
+            getIV();
+            var text = CryptoJS.enc.Hex.parse(document.getElementById('inputText').value.trim());
+            var decrypted = CryptoJS.AES.decrypt({ ciphertext: text }, key, { iv: iv });
+            var decryptedText = decrypted.toString(CryptoJS.enc.Utf8);
+            document.getElementById('outputText').textContent = decryptedText;
+            lastOperation = 'decrypted';  // Update the last operation
+        }
+
+        function downloadText() {
+            var text = document.getElementById('outputText').textContent;
+            if (text === '') {
+                alert('No text to download. Please perform some operation first.');
+                return;
+            }
+            var element = document.createElement('a');
+            element.setAttribute('href', 'data:text/plain;charset=utf-8,' + encodeURIComponent(text));
+            var fileName = lastOperation ? lastOperation + '_text.txt' : 'output_text.txt';
+            element.setAttribute('download', fileName);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        }
+    </script>
+</body>
+</html>
